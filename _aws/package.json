@@ -1,0 +1,10 @@
+{
+  "name": "aws",
+  "version": "1.0.0",
+  "description": "AWS resources to power flappy mo",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-lambda-powertools/parameters": "^1.18.0",
+    "@gomomento/sdk": "^1.63.0"
+  }
+}
