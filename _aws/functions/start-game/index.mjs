@@ -7,7 +7,16 @@ export const handler = async (event) => {
     await initializeTopicClient();
   }
 
-  await topicClient.publish(process.env.CACHE_NAME, process.env.TOPIC_NAME, JSON.stringify({ event: 'start-game' }));
+  await topicClient.publish(process.env.CACHE_NAME, process.env.TOPIC_NAME, JSON.stringify(
+    {
+      event: 'start-game',
+      gameProperties: {
+        gravity: getRandomNumberInRange(.3, .5, 1),
+        jump: getRandomNumberInRange(-10, -6),
+        gameSpeed: getRandomNumberInRange(-1, -4),
+        pipeGap: getRandomNumberInRange(50, 200)
+      }
+    }));
 };
 
 const initializeTopicClient = async () => {
@@ -15,4 +24,9 @@ const initializeTopicClient = async () => {
   topicClient = new TopicClient({
     credentialProvider: CredentialProvider.fromString(secret.momento)
   });
+};
+
+const getRandomNumberInRange = (minimum, maximum, roundingProximity = 0) => {
+  const randomNumber = (Math.random() * (maximum - minimum)) + minimum;
+  return parseFloat(randomNumber.toFixed(roundingProximity));
 };

@@ -1,21 +1,26 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { TopicClient, CredentialProvider } from '@gomomento/sdk-web';
+import { TopicClient, CredentialProvider, CacheClient, CacheSetFetch } from '@gomomento/sdk-web';
 import styles from './Game.module.css';
 
-export default function Game() {
+export default function Game({ authToken }) {
   const [topicSub, setTopicSub] = useState(null);
   const [topicClient, setTopicClient] = useState(null);
+  const [cacheClient, setCacheClient] = useState(null);
+  const cacheClientRef = useRef(cacheClient);
 
   const pipeHeights = [100, 130, 150, 200, 60, 220, 250, 340, 270, 80, 300];
   const boardWidth = 360;
   const boardHeight = 640;
-  const gravity = 0.4;
-  const jump = -8;
   const pipeWidth = 52;
-  const pipeGap = 150;
   const pipeInterval = 2000;
-  const gameSpeed = -2;
+
+  const defaultGameSettings = {
+    gravity: 0.4,
+    jump: -8,
+    gameSpeed: -2,
+    pipeGap: 150
+  };
 
   const birdInitial = useRef({
     x: boardWidth / 8,
@@ -26,16 +31,20 @@ export default function Game() {
     img: null,
   });
 
+  const [gameSettings, setGameSettings] = useState(defaultGameSettings);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(true);
   const [waitingForNextGame, setWaitingForNextGame] = useState(true);
   const [countdown, setCountdown] = useState(null);
+  const [numPlayers, setNumPlayers] = useState(1);
   const gameLoopRef = useRef(null);
   const canvasRef = useRef(null);
   const pipesRef = useRef([]);
   const lastPipeHeightRef = useRef(boardHeight / 2);
   const topPipeImg = useRef(null);
   const bottomPipeImg = useRef(null);
+  const currentGameSettings = useRef(gameSettings);
+  const currentNumPlayers = useRef(numPlayers);
 
   useEffect(() => {
     const birdImg = new Image();
@@ -53,14 +62,20 @@ export default function Game() {
     bottomImg.src = "./bottompipe.png";
     bottomImg.onload = () => bottomPipeImg.current = bottomImg;
 
-    if (window !== 'undefined') {
+    if (window !== 'undefined' && authToken) {
       const topics = new TopicClient({
-        credentialProvider: CredentialProvider.fromString(process.env.NEXT_PUBLIC_api_key)
+        credentialProvider: CredentialProvider.fromString(authToken)
       });
-
       setTopicClient(topics);
+
+      const cache = new CacheClient({
+        defaultTtlSeconds: 300,
+        credentialProvider: CredentialProvider.fromString(authToken)
+      });
+      setCacheClient(cache);
+      cacheClientRef.current = cache;
     }
-  }, [window]);
+  }, [window, authToken]);
 
   useEffect(() => {
     subscribeToGame();
@@ -78,11 +93,16 @@ export default function Game() {
 
   const processMessage = (message) => {
     const msg = JSON.parse(message);
+    console.log(message);
     switch (msg.event) {
       case 'start-game':
         if (gameOver) {
           resetGame();
+          updateGameSettings(msg.gameProperties);
         }
+        break;
+      case 'players-changed':
+        updatePlayerCount();
         break;
     }
   };
@@ -92,7 +112,7 @@ export default function Game() {
       const generatePipes = () => {
         const scoreIndex = score + (lastPipeHeightRef.current ?? 0) % pipeHeights.length;
         const topPipeHeight = pipeHeights[scoreIndex];
-        const dynamicPipeGap = Math.max(pipeGap - score * 2, 120);
+        const dynamicPipeGap = Math.max(currentGameSettings.current.pipeGap - score * 2, 120);
         lastPipeHeightRef.current = topPipeHeight;
 
         const bottomPipeHeight = boardHeight - topPipeHeight - dynamicPipeGap;
@@ -121,15 +141,16 @@ export default function Game() {
     const ctx = canvasRef.current.getContext('2d');
     ctx.clearRect(0, 0, boardWidth, boardHeight);
 
+
     // Update and draw bird
     const bird = birdInitial.current;
-    bird.velocityY += gravity;
+    bird.velocityY += currentGameSettings.current.gravity;
     bird.y = Math.max(bird.y + bird.velocityY, 0);
     ctx.drawImage(bird.img, bird.x, bird.y, bird.width, bird.height);
 
     // Update and draw pipes
     pipesRef.current.forEach((pipe) => {
-      pipe.x += gameSpeed;
+      pipe.x += currentGameSettings.current.gameSpeed;
       // Draw top pipe
       if (topPipeImg.current) {
         ctx.drawImage(topPipeImg.current, pipe.x, 0, pipeWidth, pipe.topPipeHeight);
@@ -156,6 +177,11 @@ export default function Game() {
       return;
     }
 
+    // Display on-screen data
+    ctx.font = "14px Inter";
+    ctx.fillStyle = 'black';
+    ctx.fillText(`Players: ${currentNumPlayers.current}`, 5, 15);
+
     gameLoopRef.current = requestAnimationFrame(updateGame);
   };
 
@@ -176,7 +202,7 @@ export default function Game() {
     const handleKeyDown = (e) => {
       if (e.code === "Space") {
         if (!gameOver) {
-          birdInitial.current.velocityY = jump;
+          birdInitial.current.velocityY = currentGameSettings.current.jump;
         } else {
           resetGame();
         }
@@ -212,9 +238,48 @@ export default function Game() {
     return () => clearTimeout(countdownTimer);
   }, [countdown]);
 
+  const updateGameSettings = (settings) => {
+    setGameSettings(settings);
+    currentGameSettings.current = settings;
+  };
+
+  const updatePlayerCount = async () => {
+    if (!cacheClientRef.current) {
+      console.warn('Cache client not set');
+    } else {
+      const players = await cacheClientRef.current.setFetch(process.env.NEXT_PUBLIC_cacheName, 'players');
+      if (players instanceof CacheSetFetch.Hit) {
+        const playerList = players.value();
+        currentNumPlayers.current = playerList.length;
+        setNumPlayers(playerList.length);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (authToken) {
+      const updateSession = async (shouldLeave = true) => {
+        await fetch(`/api/sessions`,
+          {
+            method: shouldLeave ? 'DELETE' : 'POST',
+            body: JSON.stringify({ token: authToken })
+          });
+      };
+
+      // Adding the event listener
+      window.addEventListener('beforeunload', updateSession);
+      updateSession(false);
+
+      // Removing the event listener on cleanup
+      return () => {
+        window.removeEventListener('beforeunload', updateSession);
+      };
+    }
+  }, [authToken]);
+
   return (
     <>
-      <canvas ref={canvasRef} width={boardWidth} height={boardHeight} className="bg-cover" style={{ backgroundImage: 'url(./flappybirdbg.png)' }}></canvas>
+      <canvas ref={canvasRef} width={boardWidth} height={boardHeight} style={{ backgroundImage: 'url(./flappybirdbg.png)' }}></canvas>
       {countdown !== null && (
         <div key={countdown} className={styles.countdown}>
           {countdown > 0 ? countdown : "Go!"}
