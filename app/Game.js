@@ -209,8 +209,20 @@ export default function Game({ authToken }) {
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
-    return () => { document.removeEventListener("keydown", handleKeyDown); };
+    const handleClick = (e) => {
+      if (!gameOver) {
+        birdInitial.current.velocityY = currentGameSettings.current.jump;
+      } else {
+        resetGame();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('click', handleClick);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('click', handleClick);
+    };
   }, [gameOver]);
 
   const resetGame = () => {
