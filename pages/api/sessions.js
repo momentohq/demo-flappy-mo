@@ -1,4 +1,4 @@
-const {  CacheClient, TopicClient, CredentialProvider } = require('@gomomento/sdk');
+const { CacheClient, TopicClient, CredentialProvider } = require('@gomomento/sdk');
 const { jwtDecode } = require('jwt-decode');
 
 let cacheClient;
@@ -8,20 +8,17 @@ export default async function handler(req, res) {
   try {
     await initializeMomento();
 
-    const { token } = JSON.parse(req.body);
+    const { token, shouldLeave } = req.body;
     let data = JSON.parse(Buffer.from(token, 'base64'));
     data = jwtDecode(data.api_key);
     const { id } = data;
-    if (req.method === 'DELETE') {
+    if (shouldLeave) {
       await cacheClient.setRemoveElement(process.env.NEXT_PUBLIC_cacheName, 'players', id);
-    } else if (req.method === 'POST') {
-      await cacheClient.setAddElement(process.env.NEXT_PUBLIC_cacheName, 'players', id);
     } else {
-      res.status(405).json({ message: 'That method type is not supported' });
-      return;
+      await cacheClient.setAddElement(process.env.NEXT_PUBLIC_cacheName, 'players', id);
     }
 
-    await topicClient.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName, JSON.stringify({ event: 'players-changed'}));
+    await topicClient.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName, JSON.stringify({ event: 'players-changed' }));
     res.status(204).end();
   } catch (err) {
     console.error(err);
