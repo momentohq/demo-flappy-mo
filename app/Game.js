@@ -24,7 +24,7 @@ export default function Game({ authToken }) {
     pipeGap: 150
   };
 
-  const birdInitial = useRef({
+  const moInitial = useRef({
     x: boardWidth / 8,
     y: boardHeight / 2,
     width: 34, // landscape is 34
@@ -40,6 +40,8 @@ export default function Game({ authToken }) {
   const [countdown, setCountdown] = useState(null);
   const [players, setPlayers] = useState([]);
   const [username, setUsername] = useState(null);
+  const [isPlayerDead, setIsPlayerDead] = useState(false);
+  const isPlayerDeadRef = useRef(isPlayerDead);
   const gameLoopRef = useRef(null);
   const canvasRef = useRef(null);
   const pipesRef = useRef([]);
@@ -52,10 +54,10 @@ export default function Game({ authToken }) {
   const scoreRef = useRef(score);
 
   useEffect(() => {
-    const birdImg = new Image();
-    birdImg.src = "./mo.png";
-    birdImg.onload = () => {
-      birdInitial.current.img = birdImg;
+    const playerImg = new Image();
+    playerImg.src = "./mo.png";
+    playerImg.onload = () => {
+      moInitial.current.img = playerImg;
       setScore((score) => score); // Trigger a re-render
       scoreRef.current = score;
     };
@@ -130,12 +132,10 @@ export default function Game({ authToken }) {
   }, [gameOver]);
 
   const updateGame = () => {
-    if (!canvasRef.current || !birdInitial.current.img || gameOverRef.current || countdown !== null) return;
+    if (!canvasRef.current || !moInitial.current.img || gameOverRef.current || countdown !== null) return;
 
     const ctx = canvasRef.current.getContext('2d');
     ctx.clearRect(0, 0, boardWidth, boardHeight);
-
-
 
     // Update and draw opponents
     ctx.globalAlpha = .65;
@@ -150,12 +150,7 @@ export default function Game({ authToken }) {
     }
     ctx.globalAlpha = 1.0;
 
-    // Update and draw bird
-    const bird = birdInitial.current;
-    bird.velocityY += currentGameSettings.current.gravity;
-    bird.y = Math.max(bird.y + bird.velocityY, 0);
-    ctx.drawImage(bird.img, bird.x, bird.y, bird.width, bird.height);
-    ctx.fillText('you', bird.x + 7, bird.y + 52);
+    const mo = moInitial.current;
 
     // Update and draw pipes
     pipesRef.current.forEach((pipe) => {
@@ -171,12 +166,26 @@ export default function Game({ authToken }) {
       }
 
       // Check for score update
-      if (!pipe.scored && pipe.x + pipeWidth < bird.x) {
+      if (!pipe.scored && pipe.x + pipeWidth < mo.x) {
         pipe.scored = true;
-        setScore((prevScore) => prevScore + 1);
-        scoreRef.current = scoreRef.current + 1;
+        if (!isPlayerDeadRef.current) {
+          setScore((prevScore) => prevScore + 1);
+          scoreRef.current = scoreRef.current + 1;
+        }
       }
     });
+
+    if (!isPlayerDeadRef.current) {
+      mo.velocityY += currentGameSettings.current.gravity;
+      mo.y = Math.max(mo.y + mo.velocityY, 0);
+      ctx.drawImage(mo.img, mo.x, mo.y, mo.width, mo.height);
+      ctx.fillText('you', mo.x + 7, mo.y + 52);
+    } else {
+      // display text here for you died.
+      ctx.font = "25px Inter";
+      ctx.fillStyle = "white";
+      ctx.fillText('You lost ☹️', (boardWidth / 2) - 60, 60);
+    }
 
     // Remove off-screen pipes
     pipesRef.current = pipesRef.current.filter(pipe => pipe.x + pipeWidth > 0);
@@ -193,7 +202,13 @@ export default function Game({ authToken }) {
     ctx.fillText(`Pipes: ${GameProps.pipes(currentGameSettings.current.pipeGap)}`, 245, 630);
 
     // Check for collisions
-    if (checkCollision(bird) || bird.y + bird.height >= boardHeight) {
+    if (checkCollision(mo) || mo.y + mo.height >= boardHeight) {
+      setIsPlayerDead(true);
+      isPlayerDeadRef.current = true;
+    }
+
+    const activePlayers = playersRef.current.filter(p => p.username !== username && p.isActive);
+    if (isPlayerDeadRef.current && !activePlayers.length) {
       setGameOver(true);
       gameOverRef.current = true;
       return;
@@ -202,12 +217,12 @@ export default function Game({ authToken }) {
     gameLoopRef.current = requestAnimationFrame(updateGame);
   };
 
-  const checkCollision = (bird) => {
+  const checkCollision = (player) => {
     for (let pipe of pipesRef.current) {
       if (
-        bird.x < pipe.x + pipeWidth &&
-        bird.x + bird.width > pipe.x &&
-        (bird.y < pipe.topPipeHeight || bird.y + bird.height > boardHeight - pipe.bottomPipeHeight)
+        player.x < pipe.x + pipeWidth &&
+        player.x + player.width > pipe.x &&
+        (player.y < pipe.topPipeHeight || player.y + player.height > boardHeight - pipe.bottomPipeHeight)
       ) {
         return true;
       }
@@ -218,19 +233,19 @@ export default function Game({ authToken }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       e.preventDefault();
-      if (e.code === "Space" && countdown === null && !gameOverRef.current) {
-        birdInitial.current.velocityY = currentGameSettings.current.jump;
+      if (e.code === "Space" && countdown === null && !isPlayerDeadRef.current) {
+        moInitial.current.velocityY = currentGameSettings.current.jump;
         topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
-          JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
+          JSON.stringify({ event: 'player-moved', velocityY: moInitial.current.velocityY, y: moInitial.current.y, isActive: true }));
       }
     };
 
     const handleClick = (e) => {
       if (countdown === null) {
-        if (!gameOverRef.current) {
-          birdInitial.current.velocityY = currentGameSettings.current.jump;
+        if (!isPlayerDeadRef.current) {
+          moInitial.current.velocityY = currentGameSettings.current.jump;
           topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
-            JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
+            JSON.stringify({ event: 'player-moved', velocityY: moInitial.current.velocityY, y: moInitial.current.y, isActive: true }));
         }
         // else {
         //   resetGame();
@@ -247,8 +262,10 @@ export default function Game({ authToken }) {
   }, [gameOver]);
 
   const resetGame = () => {
-    birdInitial.current = { ...birdInitial.current, y: boardHeight / 2, velocityY: 0 };
+    moInitial.current = { ...moInitial.current, y: boardHeight / 2, velocityY: 0 };
     updatePlayers();
+    setIsPlayerDead(false);
+    isPlayerDeadRef.current = false;
 
     pipesRef.current = [];
     lastPipeHeightRef.current = boardHeight / 2;
@@ -288,7 +305,7 @@ export default function Game({ authToken }) {
       if (players instanceof CacheSetFetch.Hit) {
         const opponents = players.value().map(p => {
           return {
-            ...birdInitial.current,
+            ...moInitial.current,
             y: boardHeight / 2,
             velocityY: 0,
             isActive: true,
