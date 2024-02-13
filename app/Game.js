@@ -9,6 +9,7 @@ export default function Game({ authToken }) {
   const [topicClient, setTopicClient] = useState(null);
   const [cacheClient, setCacheClient] = useState(null);
   const cacheClientRef = useRef(cacheClient);
+  const topicClientRef = useRef(topicClient);
 
   const pipeHeights = [100, 130, 150, 200, 60, 220, 250, 340, 270, 80, 300];
   const boardWidth = 360;
@@ -38,6 +39,7 @@ export default function Game({ authToken }) {
   const [waitingForNextGame, setWaitingForNextGame] = useState(true);
   const [countdown, setCountdown] = useState(null);
   const [players, setPlayers] = useState([]);
+  const [username, setUsername] = useState(null);
   const gameLoopRef = useRef(null);
   const canvasRef = useRef(null);
   const pipesRef = useRef([]);
@@ -71,6 +73,7 @@ export default function Game({ authToken }) {
         credentialProvider: CredentialProvider.fromString(authToken)
       });
       setTopicClient(topics);
+      topicClientRef.current = topics;
 
       const cache = new CacheClient({
         defaultTtlSeconds: 300,
@@ -78,7 +81,12 @@ export default function Game({ authToken }) {
       });
       setCacheClient(cache);
       cacheClientRef.current = cache;
+
+      const savedUsername = localStorage.getItem('username');
+      setUsername(savedUsername);
     }
+
+
   }, [window, authToken]);
 
   useEffect(() => {
@@ -88,16 +96,16 @@ export default function Game({ authToken }) {
   const subscribeToGame = async () => {
     if (topicClient && !topicSub) {
       const subscription = await topicClient.subscribe(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName, {
-        onItem: async (data) => processMessage(data.value()),
+        onItem: async (data) => processMessage(data.value(), data.tokenId()),
         onError: (err) => console.error(err)
       });
       setTopicSub(subscription);
     }
   };
 
-  const processMessage = (message) => {
+  const processMessage = (message, tokenId) => {
     const msg = JSON.parse(message);
-    console.log(message);
+    console.log(message, tokenId);
     switch (msg.event) {
       case 'start-game':
         if (gameOverRef.current) {
@@ -107,6 +115,11 @@ export default function Game({ authToken }) {
         break;
       case 'players-changed':
         updatePlayers();
+        break;
+      case 'player-moved':
+        if (tokenId !== username) {
+          updatePlayerMovement(tokenId, msg.y, msg.velocityY, msg.isActive);
+        }
         break;
     }
   };
@@ -151,6 +164,16 @@ export default function Game({ authToken }) {
     ctx.drawImage(bird.img, bird.x, bird.y, bird.width, bird.height);
     ctx.fillText('you', bird.x + 5, bird.y + 40);
 
+    // Update and draw opponents
+    for (const opp of playersRef.current.filter(p => p.username !== username && p.isActive)) {
+      opp.velocityY += currentGameSettings.current.gravity;
+      opp.y = Math.max(opp.y + opp.velocityY, 0);
+      ctx.drawImage(opp.img, opp.x, opp.y, opp.width, opp.height);
+      ctx.fillText(opp.username, opp.x + 5, opp.y + 40);
+      if (checkCollision(opp)) {
+        opp.isActive = false;
+      }
+    }
     // Update and draw pipes
     pipesRef.current.forEach((pipe) => {
       pipe.x += currentGameSettings.current.gameSpeed;
@@ -169,7 +192,6 @@ export default function Game({ authToken }) {
         pipe.scored = true;
         setScore((prevScore) => prevScore + 1);
         scoreRef.current = scoreRef.current + 1;
-        console.log(scoreRef.current);
       }
     });
 
@@ -211,9 +233,12 @@ export default function Game({ authToken }) {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      e.preventDefault();
       if (e.code === "Space" && countdown === null) {
         if (!gameOverRef.current) {
           birdInitial.current.velocityY = currentGameSettings.current.jump;
+          topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
+            JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
         } else {
           resetGame();
         }
@@ -225,6 +250,8 @@ export default function Game({ authToken }) {
       if (countdown === null) {
         if (!gameOverRef.current) {
           birdInitial.current.velocityY = currentGameSettings.current.jump;
+          topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
+            JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
         } else {
           resetGame();
         }
@@ -241,6 +268,17 @@ export default function Game({ authToken }) {
 
   const resetGame = () => {
     birdInitial.current = { ...birdInitial.current, y: boardHeight / 2, velocityY: 0 };
+    const opponents = players.map(p => {
+      return {
+        ...p,
+        y: boardHeight / 2,
+        velocityY: 0,
+        isActive: true
+      };
+    });
+    setPlayers(opponents);
+    playersRef.current = opponents;
+
     pipesRef.current = [];
     lastPipeHeightRef.current = boardHeight / 2;
     setScore(0);
@@ -277,11 +315,31 @@ export default function Game({ authToken }) {
     } else {
       const players = await cacheClientRef.current.setFetch(process.env.NEXT_PUBLIC_cacheName, 'players');
       if (players instanceof CacheSetFetch.Hit) {
-        const playerList = players.value();
+        const playerList = players.value().map(p => {
+          return {
+            ...birdInitial.current,
+            username: p,
+            isActive: false
+          };
+        });
+
         playersRef.current = playerList;
         setPlayers(playerList);
       }
     }
+  };
+
+  const updatePlayerMovement = (username, y, velocityY, isActive) => {
+    const updatedPlayers = players.map(p => {
+      if (p.username == username) {
+        return { ...p, y, velocityY, isActive };
+      } else {
+        return p;
+      }
+    });
+
+    setPlayers(updatedPlayers);
+    playersRef.current = updatedPlayers;
   };
 
   useEffect(() => {
