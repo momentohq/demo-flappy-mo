@@ -17,4 +17,5 @@
   font-size: 5rem;
   color: white;
   animation: zoomOut 1s ease-out forwards;
+  user-select: none;
 }

@@ -32,7 +32,7 @@ export default async function handler(req, res) {
       if (token instanceof GenerateDisposableToken.Success) {
 
         await cacheClient.set(process.env.NEXT_PUBLIC_cacheName, `${username}-token`, token.authToken);
-        res.status(200).json({ authToken: token.authToken });
+        res.status(200).json({ token: token.authToken });
       } else {
         throw new Error('Unable to create auth token');
       }

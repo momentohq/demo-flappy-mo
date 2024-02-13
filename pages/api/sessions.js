@@ -13,12 +13,12 @@ export default async function handler(req, res) {
     data = jwtDecode(data.api_key);
     const { id } = data;
     if (shouldLeave) {
+      console.log(`Removing ${id}`);
       await cacheClient.setRemoveElement(process.env.NEXT_PUBLIC_cacheName, 'players', id);
     } else {
+      console.log(`Adding ${id}`);
       await cacheClient.setAddElement(process.env.NEXT_PUBLIC_cacheName, 'players', id);
     }
-
-    await topicClient.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName, JSON.stringify({ event: 'players-changed' }));
     res.status(204).end();
   } catch (err) {
     console.error(err);

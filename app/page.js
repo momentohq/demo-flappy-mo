@@ -13,6 +13,7 @@ export default function Home() {
 
   useEffect(() => {
     const savedUsername = localStorage?.getItem('username');
+    console.log(savedUsername);
     if (savedUsername) {
       setUsername(savedUsername);
     } else {
@@ -23,7 +24,7 @@ export default function Home() {
   useEffect(() => {
     const getToken = async () => {
       const response = await fetch(`/api/tokens?user=${username}`);
-      if(response.ok){
+      if (response.ok) {
         const data = await response.json();
         setAuthToken(data.token);
       }
@@ -38,10 +39,12 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Flappy Bird</title>
+        <title>Flappy Mo | Momento</title>
       </Head>
       <main className="flex min-h-screen flex-col items-center justify-center p-24">
-        <GameWithNoSSR authToken={authToken} />
+        {authToken && (
+          <GameWithNoSSR authToken={authToken} />
+        )}
       </main>
     </>
   );

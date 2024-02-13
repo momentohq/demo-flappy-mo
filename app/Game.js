@@ -27,8 +27,8 @@ export default function Game({ authToken }) {
   const birdInitial = useRef({
     x: boardWidth / 8,
     y: boardHeight / 2,
-    width: 34,
-    height: 24,
+    width: 28, // landscape is 34
+    height: 34, // landscape is 24
     velocityY: 0,
     img: null,
   });
@@ -53,7 +53,7 @@ export default function Game({ authToken }) {
 
   useEffect(() => {
     const birdImg = new Image();
-    birdImg.src = "./flappybird.png";
+    birdImg.src = "./mo.png";
     birdImg.onload = () => {
       birdInitial.current.img = birdImg;
       setScore((score) => score); // Trigger a re-render
@@ -67,27 +67,7 @@ export default function Game({ authToken }) {
     const bottomImg = new Image();
     bottomImg.src = "./bottompipe.png";
     bottomImg.onload = () => bottomPipeImg.current = bottomImg;
-
-    if (window !== 'undefined' && authToken) {
-      const topics = new TopicClient({
-        credentialProvider: CredentialProvider.fromString(authToken)
-      });
-      setTopicClient(topics);
-      topicClientRef.current = topics;
-
-      const cache = new CacheClient({
-        defaultTtlSeconds: 300,
-        credentialProvider: CredentialProvider.fromString(authToken)
-      });
-      setCacheClient(cache);
-      cacheClientRef.current = cache;
-
-      const savedUsername = localStorage.getItem('username');
-      setUsername(savedUsername);
-    }
-
-
-  }, [window, authToken]);
+  }, []);
 
   useEffect(() => {
     subscribeToGame();
@@ -112,9 +92,6 @@ export default function Game({ authToken }) {
           resetGame();
           updateGameSettings(msg.gameProperties);
         }
-        break;
-      case 'players-changed':
-        updatePlayers();
         break;
       case 'player-moved':
         if (tokenId !== username) {
@@ -162,9 +139,10 @@ export default function Game({ authToken }) {
     bird.velocityY += currentGameSettings.current.gravity;
     bird.y = Math.max(bird.y + bird.velocityY, 0);
     ctx.drawImage(bird.img, bird.x, bird.y, bird.width, bird.height);
-    ctx.fillText('you', bird.x + 5, bird.y + 40);
+    ctx.fillText('you', bird.x + 5, bird.y + 45);
 
     // Update and draw opponents
+    ctx.globalAlpha = .75;
     for (const opp of playersRef.current.filter(p => p.username !== username && p.isActive)) {
       opp.velocityY += currentGameSettings.current.gravity;
       opp.y = Math.max(opp.y + opp.velocityY, 0);
@@ -174,6 +152,8 @@ export default function Game({ authToken }) {
         opp.isActive = false;
       }
     }
+    ctx.globalAlpha = 1.0;
+
     // Update and draw pipes
     pipesRef.current.forEach((pipe) => {
       pipe.x += currentGameSettings.current.gameSpeed;
@@ -198,13 +178,6 @@ export default function Game({ authToken }) {
     // Remove off-screen pipes
     pipesRef.current = pipesRef.current.filter(pipe => pipe.x + pipeWidth > 0);
 
-    // Check for collisions
-    if (checkCollision(bird) || bird.y + bird.height >= boardHeight) {
-      setGameOver(true);
-      gameOverRef.current = true;
-      return;
-    }
-
     // Display on-screen data
     ctx.font = "14px Inter";
     ctx.fillStyle = 'black';
@@ -215,6 +188,14 @@ export default function Game({ authToken }) {
     ctx.fillText(`Jump: ${GameProps.jump(currentGameSettings.current.jump)}`, 5, 630);
     ctx.fillText(`Speed: ${GameProps.speed(currentGameSettings.current.gameSpeed)}`, 245, 610);
     ctx.fillText(`Pipes: ${GameProps.pipes(currentGameSettings.current.pipeGap)}`, 245, 630);
+
+    // Check for collisions
+    if (checkCollision(bird) || bird.y + bird.height >= boardHeight) {
+      setGameOver(true);
+      gameOverRef.current = true;
+      return;
+    }
+
     gameLoopRef.current = requestAnimationFrame(updateGame);
   };
 
@@ -234,25 +215,21 @@ export default function Game({ authToken }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       e.preventDefault();
-      if (e.code === "Space" && countdown === null) {
-        if (!gameOverRef.current) {
-          birdInitial.current.velocityY = currentGameSettings.current.jump;
-          topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
-            JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
-        } else {
-          resetGame();
-        }
+      if (e.code === "Space" && countdown === null && !gameOverRef.current) {
+        birdInitial.current.velocityY = currentGameSettings.current.jump;
+        topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
+          JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
       }
     };
 
     const handleClick = (e) => {
-      //To make this not reset during the countdown the countdown needs to be a ref and checked here.
       if (countdown === null) {
         if (!gameOverRef.current) {
           birdInitial.current.velocityY = currentGameSettings.current.jump;
           topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
             JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
-        } else {
+        }
+        else {
           resetGame();
         }
       }
@@ -268,16 +245,7 @@ export default function Game({ authToken }) {
 
   const resetGame = () => {
     birdInitial.current = { ...birdInitial.current, y: boardHeight / 2, velocityY: 0 };
-    const opponents = players.map(p => {
-      return {
-        ...p,
-        y: boardHeight / 2,
-        velocityY: 0,
-        isActive: true
-      };
-    });
-    setPlayers(opponents);
-    playersRef.current = opponents;
+    updatePlayers();
 
     pipesRef.current = [];
     lastPipeHeightRef.current = boardHeight / 2;
@@ -315,16 +283,18 @@ export default function Game({ authToken }) {
     } else {
       const players = await cacheClientRef.current.setFetch(process.env.NEXT_PUBLIC_cacheName, 'players');
       if (players instanceof CacheSetFetch.Hit) {
-        const playerList = players.value().map(p => {
+        const opponents = players.value().map(p => {
           return {
             ...birdInitial.current,
-            username: p,
-            isActive: false
+            y: boardHeight / 2,
+            velocityY: 0,
+            isActive: true,
+            username: p
           };
         });
-
-        playersRef.current = playerList;
-        setPlayers(playerList);
+        setPlayers(opponents);
+        playersRef.current = opponents;
+        console.log(opponents);
       }
     }
   };
@@ -343,13 +313,23 @@ export default function Game({ authToken }) {
   };
 
   useEffect(() => {
-    if (authToken) {
+    console.log(authToken, window);
+    if (authToken && window !== 'undefined') {
+      const topics = new TopicClient({
+        credentialProvider: CredentialProvider.fromString(authToken)
+      });
+      setTopicClient(topics);
+      topicClientRef.current = topics;
 
-      const updateSession = async (shouldLeave = true) => {
-        var blob = new Blob([JSON.stringify({ token: authToken, shouldLeave })], { type: 'application/json; charset=UTF-8' });
-        navigator.sendBeacon('/api/sessions', blob);
+      const cache = new CacheClient({
+        defaultTtlSeconds: 300,
+        credentialProvider: CredentialProvider.fromString(authToken)
+      });
+      setCacheClient(cache);
+      cacheClientRef.current = cache;
 
-      };
+      const savedUsername = localStorage.getItem('username');
+      setUsername(savedUsername);
 
       // Adding the event listener
       window.addEventListener('beforeunload', updateSession);
@@ -362,6 +342,13 @@ export default function Game({ authToken }) {
     }
   }, [authToken]);
 
+  const updateSession = async (shouldLeave = true) => {
+    var blob = new Blob([JSON.stringify({ token: authToken, shouldLeave })], { type: 'application/json; charset=UTF-8' });
+    navigator.sendBeacon('/api/sessions', blob);
+
+    topicSub?.unsubscribe();
+  };
+
   return (
     <>
       <canvas ref={canvasRef} width={boardWidth} height={boardHeight} style={{ backgroundImage: 'url(./flappybirdbg.png)' }}></canvas>
@@ -370,7 +357,7 @@ export default function Game({ authToken }) {
           {countdown > 0 ? countdown : "Go!"}
         </div>
       )}
-      {waitingForNextGame && <div className="absolute text-xl text-white text-center">Waiting for <br />next game...</div>}
+      {waitingForNextGame && <div className="absolute text-xl text-white text-center select-none">Waiting for <br />next game...</div>}
     </>
   );
 };
