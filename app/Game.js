@@ -27,8 +27,8 @@ export default function Game({ authToken }) {
   const birdInitial = useRef({
     x: boardWidth / 8,
     y: boardHeight / 2,
-    width: 28, // landscape is 34
-    height: 34, // landscape is 24
+    width: 34, // landscape is 34
+    height: 41, // landscape is 24
     velocityY: 0,
     img: null,
   });
@@ -139,7 +139,7 @@ export default function Game({ authToken }) {
     bird.velocityY += currentGameSettings.current.gravity;
     bird.y = Math.max(bird.y + bird.velocityY, 0);
     ctx.drawImage(bird.img, bird.x, bird.y, bird.width, bird.height);
-    ctx.fillText('you', bird.x + 5, bird.y + 45);
+    ctx.fillText('you', bird.x + 7, bird.y + 52);
 
     // Update and draw opponents
     ctx.globalAlpha = .75;
