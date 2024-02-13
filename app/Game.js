@@ -95,6 +95,7 @@ export default function Game({ authToken }) {
         break;
       case 'player-moved':
         if (tokenId !== username) {
+          console.log('updating player movements', msg.y, msg.velocityY);
           updatePlayerMovement(tokenId, msg.y, msg.velocityY, msg.isActive);
         }
         break;
@@ -134,25 +135,27 @@ export default function Game({ authToken }) {
     const ctx = canvasRef.current.getContext('2d');
     ctx.clearRect(0, 0, boardWidth, boardHeight);
 
+
+
+    // Update and draw opponents
+    ctx.globalAlpha = .65;
+    for (const opp of playersRef.current.filter(p => p.username !== username && p.isActive)) {
+      opp.velocityY += currentGameSettings.current.gravity;
+      opp.y = Math.max(opp.y + opp.velocityY, 0);
+      ctx.drawImage(opp.img, opp.x, opp.y, opp.width, opp.height);
+      ctx.fillText(opp.username, opp.x + 7, opp.y + 52);
+      if (checkCollision(opp)) {
+        opp.isActive = false;
+      }
+    }
+    ctx.globalAlpha = 1.0;
+
     // Update and draw bird
     const bird = birdInitial.current;
     bird.velocityY += currentGameSettings.current.gravity;
     bird.y = Math.max(bird.y + bird.velocityY, 0);
     ctx.drawImage(bird.img, bird.x, bird.y, bird.width, bird.height);
     ctx.fillText('you', bird.x + 7, bird.y + 52);
-
-    // Update and draw opponents
-    ctx.globalAlpha = .75;
-    for (const opp of playersRef.current.filter(p => p.username !== username && p.isActive)) {
-      opp.velocityY += currentGameSettings.current.gravity;
-      opp.y = Math.max(opp.y + opp.velocityY, 0);
-      ctx.drawImage(opp.img, opp.x, opp.y, opp.width, opp.height);
-      ctx.fillText(opp.username, opp.x + 5, opp.y + 40);
-      if (checkCollision(opp)) {
-        opp.isActive = false;
-      }
-    }
-    ctx.globalAlpha = 1.0;
 
     // Update and draw pipes
     pipesRef.current.forEach((pipe) => {
@@ -299,10 +302,10 @@ export default function Game({ authToken }) {
     }
   };
 
-  const updatePlayerMovement = (username, y, velocityY, isActive) => {
-    const updatedPlayers = players.map(p => {
+  const updatePlayerMovement = (username, y, velocityY) => {
+    const updatedPlayers = playersRef.current.map(p => {
       if (p.username == username) {
-        return { ...p, y, velocityY, isActive };
+        return { ...p, y, velocityY };
       } else {
         return p;
       }
@@ -313,7 +316,6 @@ export default function Game({ authToken }) {
   };
 
   useEffect(() => {
-    console.log(authToken, window);
     if (authToken && window !== 'undefined') {
       const topics = new TopicClient({
         credentialProvider: CredentialProvider.fromString(authToken)
