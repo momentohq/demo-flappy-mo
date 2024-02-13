@@ -229,9 +229,9 @@ export default function Game({ authToken }) {
           topicClientRef.current.publish(process.env.NEXT_PUBLIC_cacheName, process.env.NEXT_PUBLIC_topicName,
             JSON.stringify({ event: 'player-moved', velocityY: birdInitial.current.velocityY, y: birdInitial.current.y, isActive: true }));
         }
-        else {
-          resetGame();
-        }
+        // else {
+        //   resetGame();
+        // }
       }
     };
 
