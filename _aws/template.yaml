@@ -41,11 +41,6 @@ Resources:
           SECRET_ID: "{{resolve:ssm:/serverless-toolbox/secrets}}"
           CACHE_NAME: !Ref CacheName
           TOPIC_NAME: !Ref TopicName
-      Events:
-        RateTrigger:
-          Type: Schedule
-          Properties:
-            Schedule: 'rate(1 minute)'
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -61,3 +56,84 @@ Resources:
           - js=import { createRequire } from 'module'; const require = createRequire(import.meta.url);
         External:
           - '@aws-sdk/client-secrets-manager'
+
+  StartGameStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      DefinitionUri: state machines/start-new-game.asl.json
+      DefinitionSubstitutions:
+        LambdaInvoke: !Sub arn:${AWS::Partition}:states:::lambda:invoke
+        StartGameFunction: !GetAtt StartGameFunction.Arn
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt StartGameFunction.Arn
+
+  StartGameScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PublishTopContent
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !GetAtt StartGameStateMachine.Arn
+
+  StartGameSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Trigger the Start Game State Machine every minute
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Name: TriggerStartGameStateMachine
+      ScheduleExpression: rate(1 minute)
+      Target:
+        Arn: !GetAtt StartGameStateMachine.Arn
+        RoleArn: !GetAtt StartGameScheduleRole.Arn
+
+  EnableDisableGameStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      DefinitionUri: state machines/enable-disable-game.asl.json
+      DefinitionSubstitutions:
+        GetSchedule: !Sub arn:${AWS::Partition}:states:::aws-sdk:scheduler:getSchedule
+        UpdateSchedule: !Sub arn:aws:states:::aws-sdk:scheduler:updateSchedule
+        ScheduleName: !Ref StartGameSchedule
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - scheduler:GetSchedule
+                - scheduler:UpdateSchedule
+              Resource: !GetAtt StartGameSchedule.Arn
+            - Effect: Allow
+              Action: iam:PassRole
+              Resource: !GetAtt StartGameScheduleRole.Arn
+      Events:
+        Enable:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 6 * * ? *)
+            ScheduleExpressionTimezone: America/Chicago
+            Input: "{\"state\":\"ENABLED\"}"
+        Disable:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 23 * * ? *)
+            ScheduleExpressionTimezone: America/Chicago
+            Input: "{\"state\":\"DISABLED\"}"

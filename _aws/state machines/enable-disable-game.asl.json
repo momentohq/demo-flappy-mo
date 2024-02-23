@@ -1,0 +1,31 @@
+{
+  "Comment": "Turn flappy mo on and off",
+  "StartAt": "Get Start Game Schedule",
+  "States": {
+    "Get Start Game Schedule": {
+      "Type": "Task",
+      "Next": "Enable/Disable Schedule",
+      "Parameters": {
+        "Name": "${ScheduleName}"
+      },
+      "Resource": "${GetSchedule}"
+    },
+    "Enable/Disable Schedule": {
+      "Type": "Task",
+      "End": true,
+      "Parameters": {
+        "FlexibleTimeWindow": {
+          "Mode.$": "$.FlexibleTimeWindow.Mode"
+        },
+        "Name": "${ScheduleName}",
+        "ScheduleExpression.$": "$.ScheduleExpression",
+        "Target": {
+          "Arn.$": "$.Target.Arn",
+          "RoleArn.$": "$.Target.RoleArn"
+        },
+        "State.$": "$$.Execution.Input.state"
+      },
+      "Resource": "${UpdateSchedule}"
+    }
+  }
+}
